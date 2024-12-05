@@ -1,0 +1,22 @@
+Date,Date
+Recip_County,County of Residence
+Recip_State,Recipient State
+Administered_Dose1_Recip,Total number of people with at least one dose based on the jurisdiction where the recipient lives
+Administered_Dose1_Pop_Pct,Percent of population with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_12Plus,Total number of people ages 12+ with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_12PlusPop_Pct,Percent of population ages 12+ with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_18Plus,Total number of people ages 18+ with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_18PlusPop_Pct,Percent of population ages 18+ with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_65Plus,Total number of people ages 65+ with at least one dose based on the jurisdiction where recipient lives
+Administered_Dose1_Recip_65PlusPop_Pct,Percent of population ages 65+ with at least one dose based on the jurisdiction where recipient lives
+Series_Complete_Yes,Total number of people with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_Pop_Pct,Percent of people with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_12Plus,Total number of people 12+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_12PlusPop_Pct,Percent of people 12+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_18Plus,Total number of people 18+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_18PlusPop_Pct,Percent of people 18+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_65Plus,Total number of people 65+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Series_Complete_65PlusPop_Pct,Percent of people 65+ with a completed primary series (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives
+Census2019,2019 Census Population
+Census2019_12PlusPop,2019 Census Population for ≥ 12 years of age
+Census2019_18PlusPop,2019 Census Population for ≥ 18 years of age

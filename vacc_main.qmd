@@ -1,0 +1,181 @@
+---
+title: "Vaccine Progress"
+author: "Dan Gunn"
+format: html
+editor: visual
+---
+
+### About:
+
+Summary of vaccination uptake.
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+### Packages
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(skimr)
+
+```
+
+```{r}
+census_api_key(Sys.getenv("CENSUS_API_KEY"), install = TRUE)
+```
+
+### Import data 
+
+```{r}
+county_vax_raw <- read_csv("raw_data/COVID-19_Vaccinations_in_New_Jersey_by_County.csv", 
+    col_types = cols(Date = col_date(format = "%m/%d/%Y")))
+
+web_search_raw <- read_csv("raw_data/covid19.nj.gov Internal Search Data.csv")
+
+ga_finder_raw <- read_csv("raw_data/GoogleAnalytics_covid19.nj.gov_finder.csv", 
+    col_types = cols(Date = col_date(format = "%Y%m%d"), 
+        `Avg. Session Duration` = col_time(format = "%H:%M:%S"), 
+        `Avg. Time on Page` = col_time(format = "%H:%M:%S")))
+
+ga_fullsite_raw <-  read_csv("raw_data/GoogleAnalytics_FullSitebyBrowserLanguage.csv", 
+    col_types = cols(`Month of Year` = col_date(format = "%Y%m")), 
+    skip = 1)
+
+ga_fullsite_device_raw <- read_csv("raw_data/GoogleAnalytics_FullSitebyDeviceType.csv", 
+    col_types = cols(`Month of Year` = col_date(format = "%Y%m")))
+```
+
+County list
+
+```{r}
+skim(county_vax_raw)
+```
+
+Contains an "unknown county" marker.
+
+```{r}
+county_list <- unique(county_vax_raw$Recip_County) |> sort()
+
+length(county_list)
+
+```
+
+There are 136 instances of unknown county. Consider removing
+
+```{r}
+county_vax_raw |> filter(Recip_County == "Unknown County") |> count()
+#136 instances
+
+county_vax_raw |> filter(Recip_County == "Unknown County") |> summarize(sum = sum(Administered_Dose1_Pop_Pct))
+#zero doses
+```
+
+### Get county data for New Jersey
+
+-what demos do I need? Make sure to use 2019 Census or ACS data.
+
+-   Maybe get a 65+ age group population for each
+
+-   Get a demographic breakdown for each county? Race / gender.. families?
+
+```{r}
+acs_v19 <- load_variables(2019, "acs5", cache = TRUE)
+```
+
+```{r}
+
+```
+
+```{r}
+#age
+population_age_vars <- c(
+  total_population = "B01003_001",
+  median_age = "B01002_001",
+  under_18_male = "B01001_003",    
+  under_18_female = "B01001_027",
+  age_65_plus_male = "B01001_020",
+  age_65_plus_female = "B01001_044"
+)
+
+#race
+race_ethnicity_vars <- c(
+  white_non_hispanic = "B03002_003",
+  black_or_african_american = "B03002_004",
+  hispanic_or_latino = "B03002_012",
+  asian = "B03002_006",
+  american_indian_alaska_native = "B03002_005",
+  two_or_more_races = "B03002_009"
+)
+
+#income
+income_poverty_vars <- c(
+  median_household_income = "B19013_001",
+  per_capita_income = "B19301_001",
+  individuals_below_poverty = "B17001_002",
+  total_population_poverty = "B17001_001" 
+)
+
+#education
+education_vars <- c(
+  high_school_grad = "B15003_017",
+  bachelors = "B15003_022",
+  masters = "B15003_023",
+  professional = "B15003_024",
+  doctorate = "B15003_025"
+)
+
+# Employment
+employment_vars <- c(
+  employed_population_16_plus = "B23025_004",
+  labor_force_total = "B23025_002",
+  unemployed_population = "B23025_005"
+)
+
+#language
+language_vars <- c(
+  speak_only_english = "B16001_002",
+  speak_spanish = "B16001_003"
+)
+
+#health insurance
+health_insurance_vars <- c(
+  uninsured_total = "B27001_005",
+  total_population_health_insurance = "B27001_001" 
+)
+
+```
+
+```{r}
+all_vars <- c(
+  population_age_vars,
+  race_ethnicity_vars,
+  income_poverty_vars,
+  education_vars,
+  employment_vars,
+  language_vars,
+  health_insurance_vars
+)
+
+nj_county_acs_long <- get_acs(geography = "county", 
+              variables = all_vars, 
+              state = "NJ", 
+              year = 2019)
+```
+
+Pivot
+
+```{r}
+nj_county_acs_wide <- nj_county_acs_long |>
+  #select(GEOID, NAME, variable, estimate, moe) |> 
+  pivot_wider(
+    names_from = variable, 
+    values_from = c(estimate, moe)
+  )
+
+```
+
+### Things to do.
+
+Maybe a linear model to see where we're headed.
+
+How to allocate unknown county data?
