@@ -17,6 +17,7 @@ The `echo: false` option disables the printing of code (only output is displayed
 library(tidyverse)
 library(tidycensus)
 library(skimr)
+library(ggrepel)
 
 ```
 
@@ -60,13 +61,15 @@ length(county_list)
 
 ```
 
-There are 136 instances of unknown county. Consider removing
+There are 136 instances of unknown county. I think this is a total count.
 
 ```{r}
 county_vax_raw |> filter(Recip_County == "Unknown County") |> count()
 #136 instances
 
-county_vax_raw |> filter(Recip_County == "Unknown County") |> summarize(sum = sum(Administered_Dose1_Pop_Pct))
+county_vax_raw |> filter(Date == max(Date))|>
+  filter(Recip_County != "Unknown County")|>
+  summarize(sum(Series_Complete_Yes))
 #zero doses
 ```
 
@@ -80,10 +83,6 @@ county_vax_raw |> filter(Recip_County == "Unknown County") |> summarize(sum = su
 
 ```{r}
 acs_v19 <- load_variables(2019, "acs5", cache = TRUE)
-```
-
-```{r}
-
 ```
 
 ```{r}
@@ -162,7 +161,7 @@ nj_county_acs_long <- get_acs(geography = "county",
               year = 2019)
 ```
 
-Pivot
+Pivot wider
 
 ```{r}
 nj_county_acs_wide <- nj_county_acs_long |>
@@ -179,3 +178,74 @@ nj_county_acs_wide <- nj_county_acs_long |>
 Maybe a linear model to see where we're headed.
 
 How to allocate unknown county data?
+
+### Glimpse the county trends.
+
+```{r}
+county_vax_raw |>
+  filter(Recip_County != "Unknown County") |>
+  ggplot(aes(x = Date, y = Series_Complete_Pop_Pct, color = Recip_County)) +
+  geom_line() +
+  geom_label_repel(
+    data = county_vax_raw |> 
+      filter(Recip_County != "Unknown County") |>  
+      group_by(Recip_County) |> 
+      filter(Date == max(Date)),  
+    aes(label = Recip_County),
+    size = 4,
+    nudge_x = 5,
+    max.overlaps = 25
+  ) +
+  scale_x_date(
+    limits = c(min(county_vax_raw$Date), max(county_vax_raw$Date) + 30),  
+    date_labels = "%b %Y"  
+  ) +
+  theme_minimal()
+```
+
+```{r}
+county_vax_raw |>
+  filter(Recip_County != "Unknown County") |>
+  ggplot(aes(x = Date, y = Series_Complete_Yes, color = Recip_County)) +
+  geom_line() +
+  geom_label_repel(
+    data = county_vax_raw |> 
+      filter(Recip_County != "Unknown County") |>  
+      group_by(Recip_County) |> 
+      filter(Date == max(Date)),  
+    aes(label = Recip_County),
+    size = 4,
+    nudge_x = 5,
+    max.overlaps = 25
+  ) +
+  scale_x_date(
+    limits = c(min(county_vax_raw$Date), max(county_vax_raw$Date) + 30),  
+    date_labels = "%b %Y"  
+  ) +
+  theme_minimal()
+```
+
+Cumberland county seems interesting.
+
+Distributions
+
+```{r}
+county_vax_raw |>
+   filter(Recip_County != "Unknown County") |>
+  filter(Date > as.Date("2021-04-29"))|>
+  ggplot(aes(y =reorder(Recip_County, Series_Complete_Pop_Pct), 
+             x =Series_Complete_Pop_Pct))+
+  geom_point()+
+  labs(x = "Percent Complete",
+       y = NULL)+
+  theme_minimal()
+```
+
+### Pivoting longer so that I can see the county trends for different ages side by side.
+
+```{r}
+county_vax_long <- county_vax_raw |>
+  filter(Recip_County == "Unknown County")
+
+skim(county_vax_long)
+```
