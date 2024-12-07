@@ -9,7 +9,6 @@ editor: visual
 ```{r}
 library(tidyverse)
 library(showtext)
-library(elmer)
 ```
 
 ```{r}
@@ -39,11 +38,16 @@ ga_fullsite_device |>
                   nudge_y = 250000,
                   show.legend = FALSE)+
   scale_y_continuous(labels = scales::label_comma())+
+  scale_color_manual(values = categorical_pal)+
   labs(x = NULL)+
   theme_minimal()+
-  theme(
-    text = element_text(family ="public_sans")
-  )
+  theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/web_device.png", 
+       plot = last_plot(),
+       device = "png")
 ```
 
 ```{r}
@@ -74,9 +78,9 @@ web_search_annotated_raw |>
   filter(!is.na(Category)) |>
   arrange(desc(March_21_count))|>
    pivot_longer(
-    cols = c(March_21_count, April_21_count),  # Columns to pivot
-    names_to = "Month",                       # New column for names
-    values_to = "Value"                       # New column for values
+    cols = c(March_21_count, April_21_count),  
+    names_to = "Month",                     
+    values_to = "Value"                       
   )|>
   ggplot(aes(x = reorder(Category,Value),
              y = Value,
@@ -86,12 +90,18 @@ web_search_annotated_raw |>
   geom_col(linewidth = 1,
            position = "dodge")+
   scale_y_continuous(labels = scales::label_comma())+
+  scale_fill_manual(values = categorical_pal)+
   coord_flip()+
-  labs(x = NULL)+
+  labs(x = NULL,
+       y = "Number of Searches")+
   theme_minimal()+
   theme(
     text = element_text(family ="public_sans")
   )
+
+ggsave("charts/web_topic_bar.png", 
+       plot = last_plot(),
+       device = "png")
 ```
 
 Vaccine related questions drop significantly. Turn these into slope charts.
@@ -117,11 +127,17 @@ web_search_annotated_raw |>
   geom_line(linewidth = 1)+
   geom_point()+
   scale_y_continuous(labels = scales::label_comma())+
-  labs(x = NULL)+
+  #scale_color_viridis_d(option = "E")+
+  labs(x = NULL,
+       y = "Number of Searches")+
   theme_minimal()+
   theme(
     text = element_text(family ="public_sans")
   )
+
+ggsave("charts/web_topic_slope.png", 
+       plot = last_plot(),
+       device = "png")
 ```
 
 ## Sentiment
@@ -135,3 +151,165 @@ web_search_annotated_raw |>
 Sentiment data would be harder to glean. Majority of the searches are neutrally phrased.
 
 ## Usage data per visitor
+
+```{r}
+ga_finder_raw |>
+  ggplot(aes(x = Date, y = Users))+
+  geom_area(alpha = 0.5,
+            color = "#004d58",
+            fill = "#004d58")+
+  scale_y_continuous(label = scales::label_comma())+
+  scale_x_date(date_labels = "%b %d",
+               date_breaks = "1 week",
+               date_minor_breaks = "1 day")+
+  labs(x=NULL)+
+  theme_minimal()
+
+ggsave("charts/web_user_traffic.png", 
+       plot = last_plot(),
+       device = "png")
+
+
+```
+
+What happened on 4-19 2021? Also this doesn't make sense with the device chart...
+
+```{r}
+
+monthly_summary <- ga_finder_raw |>
+  mutate(Month = floor_date(Date, "month")) |> 
+  group_by(Month) |>  
+  summarize(
+    Total = sum(Users, na.rm = TRUE),  
+    Average = mean(Users, na.rm = TRUE),  
+    .groups = "drop",
+    Avg.Session = mean(`Avg. Session Duration`, na.rm = TRUE),
+    Avg.Time = mean(`Avg. Time on Page`, na.rm = TRUE)
+  )
+monthly_summary
+```
+
+```{r}
+summary(ga_finder_raw)
+```
+
+Working to find the mean of average session durations
+
+```{r}
+#convert time to numeric and take the mean.
+mean_time_on_page <- mean(as.numeric(ga_finder_raw$`Avg. Time on Page`), na.rm = TRUE)
+mean_session <- mean(as.numeric(ga_finder_raw$`Avg. Session Duration`), na.rm = TRUE)
+
+
+mean_time_on_page/60
+mean_session/60
+```
+
+## Time per page
+
+```{r}
+ga_finder_raw |>
+  ggplot(aes(x = Date ))+
+  geom_area(aes(y = `Avg. Time on Page` ),
+            alpha = 0.5,
+            color = "#56930d",
+            fill = "#56930d")+
+  geom_area(aes( y = `Avg. Session Duration`),
+            color = "#1780c7",
+            fill = "#1780c7",
+            alpha = 0.5)+
+  labs(x = NULL,
+       y = "Average Time")+
+  theme_minimal()+
+  theme(
+    text = element_text(family ="public_sans")
+  )
+
+ggsave("charts/web_traffic_pagetime.png", 
+       plot = last_plot(),
+       device = "png")
+
+```
+
+### Site Language Usage
+
+```{r}
+ga_fullsite_raw |>
+  separate(Language, into = c("language", "country"), sep = "-")|>
+  group_by(language, `Month of Year`)|>
+  summarize(language_total = sum(Users, na.rm = TRUE))|>
+  arrange(desc(language_total))
+```
+
+### Slope Chart
+
+```{r}
+ga_fullsite_raw |>
+  separate(Language, into = c("language", "country"), sep = "-")|>
+  group_by(language, `Month of Year`)|>
+  summarize(language_total = sum(Users, na.rm = TRUE))|>
+    arrange(desc(language_total))
+   ggplot(aes(x = `Month of Year`,
+             y = language_total,
+             color = language,
+             group = language)
+         )+
+  geom_line(linewidth = 1)+
+  geom_point()+
+  scale_y_continuous(labels = scales::label_comma())+
+  #scale_color_viridis_d(option = "E")+
+  labs(x = NULL)+
+  theme_minimal()+
+  theme(
+    text = element_text(family ="public_sans")
+  )
+```
+
+```{r}
+top_ten_languages <- ga_fullsite_raw |>
+  #leparate language column into language and country
+  separate(Language, into = c("language", "country"), sep = "-") |>
+  group_by(language, `Month of Year`) |>
+  summarize(language_total = sum(Users, na.rm = TRUE), .groups = "drop") |>
+  group_by(language) |>
+  filter(n_distinct(`Month of Year`) == 2) |>
+  ungroup() |>
+  group_by(language) |>
+  summarize(total_users = sum(language_total), .groups = "drop") |>
+  slice_max(total_users, n = 10) |>
+  inner_join(
+    ga_fullsite_raw |>
+      separate(Language, into = c("language", "country"), sep = "-") |>
+      group_by(language, `Month of Year`) |>
+      summarize(language_total = sum(Users, na.rm = TRUE), .groups = "drop"),
+    by = "language"
+  ) |>
+  arrange(desc(total_users))
+
+top_ten_languages
+```
+
+```{r}
+top_ten_languages |>
+ggplot(aes(x = `Month of Year`,
+             y = language_total,
+             color = language,
+             group = language)
+         )+
+  geom_line(linewidth = 1)+
+  geom_point()+
+  #scale_y_log10(labels = scales::label_comma())+
+  scale_y_continuous(labels = scales::label_comma())+
+  #scale_color_viridis_d(option = "E")+
+  labs(x = NULL)+
+  theme_minimal()+
+  labs(x = NULL, 
+       y = "Users per Language")
+  theme(
+    text = element_text(family ="public_sans")
+  )
+  
+  ggsave("charts/web_traffic_languages.png", 
+       plot = last_plot(),
+       device = "png")
+```

@@ -7,9 +7,7 @@ editor: visual
 
 ### About:
 
-Summary of vaccination uptake.
-
-The `echo: false` option disables the printing of code (only output is displayed).
+Summary of vaccination uptake in New Jersey, early 2021.
 
 ### Packages
 
@@ -18,11 +16,41 @@ library(tidyverse)
 library(tidycensus)
 library(skimr)
 library(ggrepel)
+library(showtext)
+library(viridis)
+library(sf)
+library(corrplot)
+library(GGally)
 
 ```
 
 ```{r}
 census_api_key(Sys.getenv("CENSUS_API_KEY"), install = TRUE)
+```
+
+```{r}
+font_add_google("Public Sans", "public_sans")
+showtext_auto()
+showtext_opts(dpi=300)
+```
+
+```{r}
+#56930d
+#1780c7
+#004d58
+
+#1780c7
+#448abb
+#5b94af
+#6c9fa2
+#79aa95
+#84b588
+#8dc079
+#95cc6a
+#9bd858
+
+categorical_pal <- c( '#1780c7' ,"#56930d","#dbc83d","#004d58", "#5b94af", "#9bd858"  )
+sequential_pal <- c('#1780c7', '#448abb', '#5b94af', '#6c9fa2', '#79aa95', '#84b588', '#8dc079', '#95cc6a', '#9bd858')
 ```
 
 ### Import data 
@@ -31,7 +59,7 @@ census_api_key(Sys.getenv("CENSUS_API_KEY"), install = TRUE)
 county_vax_raw <- read_csv("raw_data/COVID-19_Vaccinations_in_New_Jersey_by_County.csv", 
     col_types = cols(Date = col_date(format = "%m/%d/%Y")))
 
-web_search_raw <- read_csv("raw_data/covid19.nj.gov Internal Search Data.csv")
+web_search_annotated_raw <- read_csv("raw_data/covid19.nj.gov Internal Search Data_annotated.csv")
 
 ga_finder_raw <- read_csv("raw_data/GoogleAnalytics_covid19.nj.gov_finder.csv", 
     col_types = cols(Date = col_date(format = "%Y%m%d"), 
@@ -46,7 +74,7 @@ ga_fullsite_device_raw <- read_csv("raw_data/GoogleAnalytics_FullSitebyDeviceTyp
     col_types = cols(`Month of Year` = col_date(format = "%Y%m")))
 ```
 
-County list
+### County list
 
 ```{r}
 skim(county_vax_raw)
@@ -61,7 +89,9 @@ length(county_list)
 
 ```
 
-There are 136 instances of unknown county. I think this is a total count.
+There are 136 instances of unknown county.
+
+Tally up the statewide total and add it to it.
 
 ```{r}
 county_vax_raw |> filter(Recip_County == "Unknown County") |> count()
@@ -82,7 +112,7 @@ county_vax_raw |> filter(Date == max(Date))|>
 -   Get a demographic breakdown for each county? Race / gender.. families?
 
 ```{r}
-acs_v19 <- load_variables(2019, "acs5", cache = TRUE)
+acs_v19 <- load_variables(2019, "acs1", cache = TRUE)
 ```
 
 ```{r}
@@ -90,10 +120,22 @@ acs_v19 <- load_variables(2019, "acs5", cache = TRUE)
 population_age_vars <- c(
   total_population = "B01003_001",
   median_age = "B01002_001",
-  under_18_male = "B01001_003",    
-  under_18_female = "B01001_027",
-  age_65_plus_male = "B01001_020",
-  age_65_plus_female = "B01001_044"
+  
+  # Males
+  age_65_66_male = "B01001_020",
+  age_67_69_male = "B01001_021",
+  age_70_74_male = "B01001_022",
+  age_75_79_male = "B01001_023",
+  age_80_84_male = "B01001_024",
+  age_85_plus_male = "B01001_025",
+  
+  # Females
+  age_65_66_female = "B01001_044",
+  age_67_69_female = "B01001_045",
+  age_70_74_female = "B01001_046",
+  age_75_79_female = "B01001_047",
+  age_80_84_female = "B01001_048",
+  age_85_plus_female = "B01001_049"
 )
 
 #race
@@ -155,10 +197,12 @@ all_vars <- c(
   health_insurance_vars
 )
 
-nj_county_acs_long <- get_acs(geography = "county", 
-              variables = all_vars, 
-              state = "NJ", 
-              year = 2019)
+nj_county_acs_long <- get_acs(survey = "acs1", #Using ACS 1-year for 2019
+                              geography = "county", 
+                              variables = all_vars, 
+                              state = "NJ",
+                              year = 2019,
+                              geometry = TRUE)
 ```
 
 Pivot wider
@@ -179,49 +223,243 @@ Maybe a linear model to see where we're headed.
 
 How to allocate unknown county data?
 
-### Glimpse the county trends.
+### Calculating the statewide 65+ population
+
+```{r}
+nj_county_acs_wide |>
+  st_drop_geometry()|>
+  summarize(over65_pop = sum(estimate_age_65_66_male,
+ estimate_age_67_69_male ,
+  estimate_age_70_74_male ,
+  estimate_age_75_79_male,
+  estimate_age_80_84_male,
+  estimate_age_85_plus_male,
+ estimate_age_65_66_female,
+ estimate_age_67_69_female,
+ estimate_age_70_74_female,
+ estimate_age_75_79_female,
+ estimate_age_80_84_female,
+ estimate_age_85_plus_female))
+```
+
+## State Trends
+
+Administered Doses
+
+```{r}
+state_level_vax <- county_vax_raw |> 
+  group_by(Date)|>
+  summarize(TotalDoses = sum(Administered_Dose1_Recip, na.rm = TRUE),
+         Total_Pop = sum(Census2019, na.rm = TRUE), 
+         TotalDoses_12up = sum(Administered_Dose1_Recip_12Plus, na.rm = TRUE),
+         Total_Pop_12up = sum(Census2019_12PlusPop, na.rm = TRUE),
+         TotalDoses_18up = sum(Administered_Dose1_Recip_18Plus, na.rm = TRUE),
+         Total_Pop_18up = sum(Census2019_18PlusPop, na.rm = TRUE),
+         TotalDoses_65up = sum(Administered_Dose1_Recip_65Plus, na.rm = TRUE))|>
+  mutate(Total_pct = TotalDoses/Total_Pop,
+         Total_12up_pct = TotalDoses_12up/Total_Pop_12up,
+         Total_18up_pct = TotalDoses_18up/Total_Pop_18up ,
+         Total_65_pct = TotalDoses_65up/1475075)|>
+  mutate(Total_18up_pct = replace_na(Total_18up_pct, 0))
+  
+```
+
+Pivot table to use all of the percentages.... maybe first get the population for 65+
+
+```{r}
+state_level_vax |>
+  ggplot(aes(x=Date))+
+  geom_line(aes(y = Total_pct),
+            color =  "#004d58",
+             size = 0.75)+
+  geom_line(aes(y = Total_12up_pct),
+            color ="#1780c7",
+            size = 0.75)+
+   geom_line(aes(y = Total_18up_pct),
+            color ="#56930d",
+            size = 0.75)+
+    geom_line(aes(y = Total_65_pct),
+            color ="#dbc83d",
+            size = 0.75)+
+  scale_y_continuous(labels = scales::label_percent(scale = 100))+
+  scale_x_date(date_labels = "%b %d %Y")+
+  labs(x=NULL,
+       y = "Percentage with at Least One Dose")+
+  theme_minimal()+
+   theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_onedose_line_state.png", 
+       plot = last_plot(),
+       device = "png")
+  
+  #004d58","#56930d", '#1780c7', "#dbc83d"
+```
+
+```{r}
+state_level_vax |>
+    filter(Date > as.Date("2021-04-29"))
+```
+
+Series Complete
+
+```{r}
+state_level_vax_series <- county_vax_raw |> 
+  group_by(Date)|>
+  summarize(TotalSeries = sum(Series_Complete_Yes, na.rm = TRUE),
+         Total_Pop = sum(Census2019, na.rm = TRUE), 
+         TotalSeries_12up = sum(Series_Complete_12Plus, na.rm = TRUE),
+         Total_Pop_12up = sum(Census2019_12PlusPop, na.rm = TRUE),
+         TotalSeries_18up = sum(Series_Complete_18Plus, na.rm = TRUE),
+         Total_Pop_18up = sum(Census2019_18PlusPop, na.rm = TRUE),
+         TotalSeries_65up = sum(Series_Complete_65Plus, na.rm = TRUE))|>
+  mutate(Series_pct = TotalSeries/Total_Pop,
+         Series_12up_pct = TotalSeries_12up/Total_Pop_12up,
+         Series_18up_pct = TotalSeries_18up/Total_Pop_18up ,
+         Series_65_pct = TotalSeries_65up/1475075)
+
+```
+
+```{r}
+state_level_vax_series |>
+    filter(Date > as.Date("2021-04-29"))
+```
+
+```{r}
+
+last_points <- state_level_vax_series |> 
+  filter(Date == max(Date)) |> 
+  ungroup()
+
+state_level_vax_series |>
+  ggplot(aes(x=Date))+
+  geom_line(aes(y = Series_pct),
+            color =  "#004d58",
+             size = 0.75)+
+  geom_line(aes(y = Series_12up_pct),
+            color ="#1780c7",
+            size = 0.75)+
+   geom_line(aes(y = Series_18up_pct),
+            color ="#56930d",
+            size = 0.75)+
+    geom_line(aes(y = Series_65_pct),
+            color ="#dbc83d",
+            size = 0.75)+
+  # geom_text(data = last_points,
+  #           aes(y = Series_pct,
+  #               label = paste0(round(Series_pct, 1)*100, "%")),
+  #           hjust = -0.1,  # Position labels slightly outside the bars
+  #           size = 3) +
+  scale_y_continuous(labels = scales::label_percent(scale = 100),
+                     limits = c(0,.80))+
+  scale_x_date(date_labels = "%b %d %Y")+
+  labs(x=NULL,
+       y = "Percentage with a Complete Series")+
+  theme_minimal()+
+    theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_series_line_state.png", 
+       plot = last_plot(),
+       device = "png")
+```
+
+### Calculate the rate of vaccinations.
+
+```{r}
+state_level_vax_rates <- state_level_vax |>
+ mutate(
+    Daily_Shots = TotalDoses - lag(TotalDoses, default = 0),  # Shots administered that day
+    Daily_Rate_Percentage = (Daily_Shots / Total_Pop) * 100       # Daily vaccination rate
+  )
+state_level_vax_rates
+```
+
+```{r}
+state_level_vax_rates |>
+filter(Date != as.Date("2021-04-04"))|> #removing outlier / incorrect data 
+ggplot(aes(x = Date, 
+           y = Daily_Rate_Percentage)) +
+  geom_col(fill = "#004d58") +
+    scale_y_continuous(labels = scales::label_percent(scale = 1))+
+  scale_x_date(date_labels = "%b %d %Y")+
+  labs(
+    title = "",
+    x = NULL,
+    y = "Vaccination Rate (%)"
+  ) +
+  theme_minimal()+
+    theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_rates_column.png", 
+       plot = last_plot(),
+       device = "png")
+```
+
+## County Trends
 
 ```{r}
 county_vax_raw |>
   filter(Recip_County != "Unknown County") |>
-  ggplot(aes(x = Date, y = Series_Complete_Pop_Pct, color = Recip_County)) +
-  geom_line() +
+  ggplot(aes(x = Date, 
+             y = Series_Complete_Pop_Pct, 
+             color = Recip_County)) +
+  geom_line(show.legend = FALSE) +
   geom_label_repel(
-    data = county_vax_raw |> 
-      filter(Recip_County != "Unknown County") |>  
-      group_by(Recip_County) |> 
-      filter(Date == max(Date)),  
+    data = county_vax_raw |>
+      filter(Recip_County != "Unknown County") |>
+      group_by(Recip_County) |>
+      filter(Date == max(Date)),
     aes(label = Recip_County),
     size = 4,
     nudge_x = 5,
-    max.overlaps = 25
+    max.overlaps = 25,
+    show.legend = FALSE
   ) +
   scale_x_date(
     limits = c(min(county_vax_raw$Date), max(county_vax_raw$Date) + 30),  
     date_labels = "%b %Y"  
   ) +
-  theme_minimal()
+  scale_y_continuous(labels = scales::label_percent(scale = 1))+
+  labs(x = NULL,
+       y = "Vaccination Percentage of Population")+
+  theme_minimal()+  
+  theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_percent_line_county.png", 
+       plot = last_plot(),
+       device = "png")
 ```
 
 ```{r}
 county_vax_raw |>
   filter(Recip_County != "Unknown County") |>
   ggplot(aes(x = Date, y = Series_Complete_Yes, color = Recip_County)) +
-  geom_line() +
-  geom_label_repel(
-    data = county_vax_raw |> 
-      filter(Recip_County != "Unknown County") |>  
-      group_by(Recip_County) |> 
-      filter(Date == max(Date)),  
-    aes(label = Recip_County),
-    size = 4,
-    nudge_x = 5,
-    max.overlaps = 25
-  ) +
+  geom_step() +
+  # geom_label_repel(
+  #   data = county_vax_raw |> 
+  #     filter(Recip_County != "Unknown County") |>  
+  #     group_by(Recip_County) |> 
+  #     filter(Date == max(Date)),  
+  #   aes(label = Recip_County),
+  #   size = 4,
+  #   nudge_x = 5,
+  #   max.overlaps = 25,
+  #    show.legend = FALSE
+  # ) +
   scale_x_date(
     limits = c(min(county_vax_raw$Date), max(county_vax_raw$Date) + 30),  
     date_labels = "%b %Y"  
   ) +
+    scale_y_continuous(labels = scales::label_comma())+
+  labs(x = NULL)+
+
   theme_minimal()
 ```
 
@@ -235,17 +473,334 @@ county_vax_raw |>
   filter(Date > as.Date("2021-04-29"))|>
   ggplot(aes(y =reorder(Recip_County, Series_Complete_Pop_Pct), 
              x =Series_Complete_Pop_Pct))+
-  geom_point()+
+  geom_col(aes(x = 100), fill = "gray90") +
+  geom_col(fill = "#004d58",
+           alpha = 1)+
+  geom_text(aes(label = paste0(round(Series_Complete_Pop_Pct, 1), "%")),
+            hjust = -0.1,  
+            size = 3) +
+  scale_x_continuous(labels = scales::label_percent(scale = 1),
+                     limits = c(0,100))+
   labs(x = "Percent Complete",
        y = NULL)+
-  theme_minimal()
+  theme_minimal()+
+    theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_series_bar.png", 
+       plot = last_plot(),
+       device = "png")
 ```
 
 ### Pivoting longer so that I can see the county trends for different ages side by side.
 
 ```{r}
 county_vax_long <- county_vax_raw |>
-  filter(Recip_County == "Unknown County")
+  filter(Recip_County != "Unknown County")|>
+  pivot_longer(cols = -c(Date, Recip_County, Recip_State),
+    names_to = "variable",
+    values_to = "value"
+  )
 
-skim(county_vax_long)
+
+```
+
+```{r}
+#Getting a order for the chart
+# county_vax_long <- county_vax_long |> 
+#   group_by(Recip_County) |> 
+#  # filter(variable == "Series_Complete_Pop_Pct")|>
+#   mutate(order_value = mean(value, na.rm = TRUE))
+
+
+county_vax_long |>
+  filter(Date > as.Date("2021-04-29"))|>
+  filter(variable %in% c("Series_Complete_Pop_Pct",
+                         "Series_Complete_12PlusPop_Pct",
+                         "Series_Complete_18PlusPop_Pct",
+                         "Series_Complete_65PlusPop_Pct"))|>
+ mutate(Recip_County = fct_reorder(Recip_County, value, .fun = min, .desc = FALSE)) |> 
+  ggplot(aes(x = value, 
+           y = Recip_County,
+           color = variable,
+           group = Recip_County)) +
+  scale_color_manual(values = categorical_pal)+
+  geom_line(color = "darkgray")+
+  geom_point(size = 3) +  # Bars grouped by variable
+  #facet_wrap(~Recip_County, scales = "free_y") +  # Separate panels for each county
+  scale_x_continuous(labels = scales::label_percent(scale = 1),
+                     limits = c(10, 90),
+                     breaks = seq(10, 90, by = 10))+
+  labs(title = "Complete Vaccination Series by Age",
+       x = "Percent Vaccination Series Complete", 
+       y = NULL, 
+       color = "Ages") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1),
+        axis.title.x = element_text(size = 10),
+        text = element_text(family ="public_sans")) 
+
+ggsave("charts/vacc_series_lollipop.png", 
+       plot = last_plot(),
+       device = "png")
+```
+
+```{r}
+names(nj_county_acs_wide)
+```
+
+Income by county
+
+```{r}
+nj_county_acs_wide_df <- nj_county_acs_wide |> 
+  mutate(Recip_County = sub(", New Jersey", "", NAME))|>
+  select(-NAME)|>
+  group_by(Recip_County)|>
+ mutate(estimate_over65_pop = sum(estimate_age_65_66_male,
+ estimate_age_67_69_male ,
+  estimate_age_70_74_male ,
+  estimate_age_75_79_male,
+  estimate_age_80_84_male,
+  estimate_age_85_plus_male,
+ estimate_age_65_66_female,
+ estimate_age_67_69_female,
+ estimate_age_70_74_female,
+ estimate_age_75_79_female,
+ estimate_age_80_84_female,
+ estimate_age_85_plus_female))|>
+  select(-c(estimate_age_65_66_male,
+ estimate_age_67_69_male ,
+  estimate_age_70_74_male ,
+  estimate_age_75_79_male,
+  estimate_age_80_84_male,
+  estimate_age_85_plus_male,
+ estimate_age_65_66_female,
+ estimate_age_67_69_female,
+ estimate_age_70_74_female,
+ estimate_age_75_79_female,
+ estimate_age_80_84_female,
+ estimate_age_85_plus_female))|>
+  mutate(
+    centroid = st_centroid(geometry),
+    label_x = st_coordinates(centroid)[, 1],  #adding label geometry
+    label_y = st_coordinates(centroid)[, 2]   
+  )|>
+  select(-starts_with("moe"))
+  
+```
+
+### Combining with vaccine data.
+
+```{r}
+
+nj_county_combined_df <- nj_county_acs_wide_df |>
+  left_join(county_vax_raw, by = "Recip_County")
+```
+
+```{r}
+nj_county_combined_df_geom_stripped <- st_drop_geometry(nj_county_combined_df) |>
+  ungroup()|> 
+  filter(Date > as.Date("2021-04-29"))|>
+  select(-GEOID, -centroid, -Date, -label_x, label_y, -Recip_County, -Recip_State)
+```
+
+### Correlation by Race / Ethnicity
+
+```{r}
+
+png("charts/Race_Ethnicity_CorrPlot_Race.png", width = 1000, height = 800)
+
+nj_county_combined_df_geom_stripped|>
+  select(estimate_american_indian_alaska_native, 
+         estimate_asian,
+         estimate_black_or_african_american,
+         estimate_white_non_hispanic,
+         estimate_hispanic_or_latino,
+         estimate_two_or_more_races,
+         Administered_Dose1_Recip,
+         Series_Complete_Yes)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",
+           type = "upper",
+            addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+
+dev.off() 
+
+```
+
+```{r}
+nj_county_combined_df_geom_stripped|>
+  select(estimate_american_indian_alaska_native, 
+         estimate_asian,
+         estimate_black_or_african_american,
+         estimate_white_non_hispanic,
+         estimate_hispanic_or_latino,
+         estimate_two_or_more_races,
+         Administered_Dose1_Recip,
+         Series_Complete_Yes)|>
+  ggpairs()
+```
+
+### Language Correlation Plot
+
+```{r}
+png("charts/Language_CorrPlot.png", width = 1000, height = 800)
+
+nj_county_combined_df_geom_stripped|>
+  select(estimate_speak_only_english,
+         estimate_speak_spanish,
+         Administered_Dose1_Recip,
+         Series_Complete_Yes)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",        
+         type = "upper",           
+         addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+
+dev.off() 
+```
+
+### Employment / Health Insurance Correlation Plot
+
+```{r}
+nj_county_combined_df_geom_stripped|>
+  select(estimate_uninsured_total,
+         estimate_total_population_health_insurance,
+         estimate_unemployed_population,
+         estimate_employed_population_16_plus,
+         Administered_Dose1_Recip,
+         Series_Complete_Yes)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",        
+         type = "upper",           
+         addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+```
+
+### Age Correlation Plot
+
+```{r}
+nj_county_combined_df_geom_stripped|>
+  select(estimate_median_age, 
+         estimate_over65_pop,
+         Census2019_12PlusPop,
+         Census2019_18PlusPop,
+         Administered_Dose1_Recip,
+         Series_Complete_Yes)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",        
+         type = "upper",           
+         addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+```
+
+Strange result.
+
+## Mapping
+
+### Black population
+
+```{r}
+nj_county_acs_wide_df |>
+  ggplot(aes(fill = estimate_black_or_african_american,
+             geometry = geometry))+
+  geom_sf()+
+   scale_fill_gradient(low = "#1780c7", high = "#dbc83d")+
+  geom_label_repel(aes(x= label_x,
+                       y = label_y,
+                       label =Recip_County),
+                   fill = "white",
+                   size = 3)+
+  labs(x = NULL,
+       y = NULL,
+       fill = "Black or African American Population")+
+  theme_void()
+
+ggsave("charts/state_blackpop_countymap.png", 
+       plot = last_plot(),
+       device = "png",
+       height = 10)
+```
+
+### American Indian population
+
+```{r}
+nj_county_combined_df  |>
+  filter(Date > as.Date("2021-04-29"))|>
+  ggplot(aes(fill = estimate_american_indian_alaska_native ,
+             geometry = geometry))+
+  geom_sf()+
+  scale_fill_gradient(low = "#1780c7", high = "#dbc83d")+
+  geom_label_repel(aes(x= label_x,
+                       y = label_y,
+                       label =Recip_County),
+                       fill = "white",
+                   size = 3)+
+  labs(x = NULL,
+       y = NULL,
+       fill = "American Indian / Alaska Native Population")+
+theme_void()+
+  theme(
+  )
+
+ggsave("charts/state_amerindiankpop_countymap.png", 
+       plot = last_plot(),
+       device = "png",
+      height = 10)
+```
+
+```{r}
+outliers <- nj_county_combined_df |>
+  st_drop_geometry() |>
+  ungroup()|> 
+  filter(Date > as.Date("2021-04-29"))|>
+  select(-GEOID, -centroid, -Date, -label_x, label_y, -Recip_State)|>
+  pivot_longer(cols = -Recip_County, names_to = "Variable", values_to = "Value") |>
+  group_by(Variable) |>
+  mutate(z_score = scale(Value)) |>
+  filter(Recip_County == "Cumberland County") |>
+  arrange(desc(abs(z_score)))  # Sort by magnitude of z-scores
+
+# View results
+print(outliers)
+```
+
+```{r}
+outliers |>
+  ggplot(aes(x = Variable, y = z_score, fill = z_score > 0)) +
+  geom_col() +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "red") +
+  coord_flip() +
+  labs(title = paste("Outliers for County:"), y = "Z-Score", x = "Variable") +
+  theme_minimal()
+```
+
+### Uninsured Population
+
+```{r}
+nj_county_combined_df  |>
+  filter(Date > as.Date("2021-04-29"))|>
+  ggplot(aes(fill = estimate_uninsured_total ,
+             geometry = geometry))+
+  geom_sf()+
+  geom_label_repel(aes(x= label_x,
+                       y = label_y,
+                       label =Recip_County),
+                       fill = "white")+
+  labs(x = NULL,
+       y = NULL)+
+  theme_minimal()
+```
+
+```{r}
 ```
