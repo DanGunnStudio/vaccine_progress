@@ -53,7 +53,7 @@ categorical_pal <- c( '#1780c7' ,"#56930d","#dbc83d","#004d58", "#5b94af", "#9bd
 sequential_pal <- c('#1780c7', '#448abb', '#5b94af', '#6c9fa2', '#79aa95', '#84b588', '#8dc079', '#95cc6a', '#9bd858')
 ```
 
-### Import data 
+### Import data
 
 ```{r}
 county_vax_raw <- read_csv("raw_data/COVID-19_Vaccinations_in_New_Jersey_by_County.csv", 
