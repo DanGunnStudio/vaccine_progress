@@ -609,7 +609,7 @@ nj_county_combined_df_geom_stripped <- st_drop_geometry(nj_county_combined_df) |
 
 ```{r}
 
-png("charts/Race_Ethnicity_CorrPlot_Race.png", width = 1000, height = 800)
+#png("charts/Race_Ethnicity_CorrPlot_Race.png", width = 1000, height = 800)
 
 nj_county_combined_df_geom_stripped|>
   select(estimate_american_indian_alaska_native, 
@@ -628,21 +628,67 @@ nj_county_combined_df_geom_stripped|>
          tl.srt = 45,              
          number.cex = 0.8) 
 
-dev.off() 
+#dev.off() 
+
+```
+
+## Converting the demographics to proportions.
+
+```{r}
+demographic_df <- nj_county_combined_df_geom_stripped %>%
+  mutate(
+    proportion_american_indian_alaska_native = estimate_american_indian_alaska_native / Census2019,
+    proportion_black_africanamerican = estimate_black_or_african_american / Census2019
+  )
+
+
+threshold <- 0.05
+stratified_df <- demographic_df  %>%
+  filter(proportion_black_africanamerican > threshold)
 
 ```
 
 ```{r}
-nj_county_combined_df_geom_stripped|>
-  select(estimate_american_indian_alaska_native, 
-         estimate_asian,
-         estimate_black_or_african_american,
-         estimate_white_non_hispanic,
-         estimate_hispanic_or_latino,
-         estimate_two_or_more_races,
-         Administered_Dose1_Recip,
-         Series_Complete_Yes)|>
-  ggpairs()
+ggplot(stratified_df, aes(x = proportion_black_africanamerican, y = Administered_Dose1_Recip)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(
+    title = "Relationship Between Black Population and Vaccine Doses",
+    x = "Proportion of American Indian/Alaska Native Population",
+    y = "Administered First Dose Recipients"
+  ) +
+  theme_minimal()
+```
+
+### Checking the Black population
+
+```{r}
+stratified_df|>
+  select(proportion_black_africanamerican, 
+         Administered_Dose1_Recip)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",
+           type = "upper",
+            addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+
+```
+
+### Checking the Native American population
+
+```{r}
+demographic_df|>
+  select(proportion_american_indian_alaska_native, 
+         Administered_Dose1_Recip)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",
+           type = "upper",
+            addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
 ```
 
 ### Language Correlation Plot
@@ -685,6 +731,22 @@ nj_county_combined_df_geom_stripped|>
          number.cex = 0.8) 
 ```
 
+### Per capita income
+
+```{r}
+nj_county_combined_df_geom_stripped|>
+  select(estimate_per_capita_income, 
+         estimate_median_household_income,
+         Administered_Dose1_Recip)|>
+  cor(use = "complete.obs") |>
+  corrplot(method = "circle",        
+         type = "upper",           
+         addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.8) 
+```
+
 ### Age Correlation Plot
 
 ```{r}
@@ -703,8 +765,6 @@ nj_county_combined_df_geom_stripped|>
          tl.srt = 45,              
          number.cex = 0.8) 
 ```
-
-Strange result.
 
 ## Mapping
 
@@ -768,7 +828,7 @@ outliers <- nj_county_combined_df |>
   pivot_longer(cols = -Recip_County, names_to = "Variable", values_to = "Value") |>
   group_by(Variable) |>
   mutate(z_score = scale(Value)) |>
-  filter(Recip_County == "Cumberland County") |>
+ # filter(Recip_County == "Cumberland County") |>
   arrange(desc(abs(z_score)))  # Sort by magnitude of z-scores
 
 # View results
@@ -777,6 +837,18 @@ print(outliers)
 
 ```{r}
 outliers |>
+  ggplot(aes(x = Variable, y = z_score, fill = z_score > 0)) +
+  geom_col() +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "red") +
+  coord_flip() +
+  labs(title = paste("Outliers for County:"), y = "Z-Score", x = "Variable") +
+  facet_wrap(~Recip_County)+
+  theme_minimal()
+```
+
+```{r}
+outliers |>
+  filter(Recip_County == "Cumberland County") |>
   ggplot(aes(x = Variable, y = z_score, fill = z_score > 0)) +
   geom_col() +
   geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "red") +
